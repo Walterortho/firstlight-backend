@@ -31,9 +31,9 @@ app.use((req, res, next) => {
 });
 
 const allowedOrigins = [
-    'https://FirstLightlgs.online',
-    'https://www.FirstLightlgs.online',
-    'https://FirstLight-frontend.vercel.app',
+    'https://firstlightlogistics.online',
+    'https://www.firstlightlogistics.online',
+    'https://firstlight-frontend.vercel.app',
     'http://localhost:5000', // Assuming this is your local dev port
     'http://localhost:3000' // If you also use a local Next.js/React dev server
 ];
