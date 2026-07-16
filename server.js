@@ -3,8 +3,10 @@ import mongoose from "mongoose";
 import cors from "cors";
 import multer from "multer";
 import path from "path";
+import bcrypt from "bcryptjs";
 import Parcel from "./models/parcel.js";
 import Message from './models/Message.js';
+import AdminSettings from "./models/AdminSettings.js";
 import dotenv from "dotenv"
 dotenv.config();
 
@@ -72,6 +74,22 @@ mongoose.connect(process.env.MONGO_URI)
     // CRITICAL FIX: 'conn' is assigned only when connection is successful
     conn = connection.connection.db;
     console.log("MongoDB Connected ✅");
+
+    // ---------------------------------------------------------
+    // --- SEED ADMIN PIN FROM .env (ONLY IF NOT ALREADY IN DB) ---
+    // ---------------------------------------------------------
+    (async () => {
+        try {
+            const existingSettings = await AdminSettings.findOne();
+            if (!existingSettings) {
+                const hashedPin = await bcrypt.hash(process.env.ADMIN_PIN, 10);
+                await AdminSettings.create({ pin: hashedPin });
+                console.log("Admin PIN seeded from .env into database ✅");
+            }
+        } catch (err) {
+            console.error("Error seeding admin PIN:", err);
+        }
+    })();
    
     // ---------------------------------------------------------
     // --- 1. INITIALIZE SERVER AND SOCKET.IO HERE ---
@@ -159,12 +177,51 @@ mongoose.connect(process.env.MONGO_URI)
     });
 
     // ADMIN LOGIN API ENDPOINT
-    app.post("/api/admin/login", (req, res) => {
-        const { pin } = req.body;
-        if (pin === process.env.ADMIN_PIN) {
-            return res.json({ success: true, message: "Login successful" });
-        } else {
-            return res.status(401).json({ success: false, message: "Invalid access pin" });
+    app.post("/api/admin/login", async (req, res) => {
+        try {
+            const { pin } = req.body;
+            const settings = await AdminSettings.findOne();
+            if (!settings) {
+                return res.status(500).json({ success: false, message: "Admin PIN not configured" });
+            }
+            const match = await bcrypt.compare(pin, settings.pin);
+            if (match) {
+                return res.json({ success: true, message: "Login successful" });
+            } else {
+                return res.status(401).json({ success: false, message: "Invalid access pin" });
+            }
+        } catch (err) {
+            console.error("Error during admin login:", err);
+            res.status(500).json({ success: false, message: "Error logging in", error: err.message });
+        }
+    });
+
+    // ADMIN CHANGE PIN ENDPOINT
+    app.post("/api/admin/change-pin", async (req, res) => {
+        try {
+            const { currentPin, newPin } = req.body;
+
+            if (!newPin || newPin.length < 4) {
+                return res.status(400).json({ success: false, message: "New PIN must be at least 4 characters" });
+            }
+
+            const settings = await AdminSettings.findOne();
+            if (!settings) {
+                return res.status(500).json({ success: false, message: "Admin PIN not configured" });
+            }
+
+            const match = await bcrypt.compare(currentPin, settings.pin);
+            if (!match) {
+                return res.status(401).json({ success: false, message: "Current PIN is incorrect" });
+            }
+
+            settings.pin = await bcrypt.hash(newPin, 10);
+            await settings.save();
+
+            res.json({ success: true, message: "PIN updated successfully" });
+        } catch (err) {
+            console.error("Error changing admin PIN:", err);
+            res.status(500).json({ success: false, message: "Error updating PIN", error: err.message });
         }
     });
 
